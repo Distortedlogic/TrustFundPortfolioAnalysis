@@ -1,0 +1,6 @@
+{
+  "python.defaultInterpreterPath": "C:\\Users\\jerme\\anaconda3\\envs\\portfolio\\python.exe",
+  "python.autoComplete.extraPaths": ["${workspaceFolder}/src"],
+  "python.analysis.extraPaths": ["${workspaceFolder}/src"],
+  "python.pythonPath":"C:\\Users\\jerme\\anaconda3\\envs\\portfolio\\python.exe",
+}
