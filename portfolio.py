@@ -1,28 +1,21 @@
-from datetime import datetime, timedelta
-
-import ccxt
 import pandas as pd
 from IPython.display import display
-from yahoo_fin import stock_info
 
-from purchases import *
-
-exchange = ccxt.binance()
+from ticker_utils import TickerUtils
 
 
 def get_cost_basis_per_share():
     purchases_df = pd.read_csv("purchases_df.csv")
     grouped_by_ticker = purchases_df.groupby(['ticker_sym'])
     cost_basis_per_share = grouped_by_ticker[['qty', 'cost']].sum().reset_index()
-    cost_basis_per_share["first_purchase"] = grouped_by_ticker['purchased_at'].min().reset_index()["purchased_at"]
-    cost_basis_per_share["last_purchase"] = grouped_by_ticker['purchased_at'].max().reset_index()["purchased_at"]
     cost_basis_per_share["cost_per_share"] = cost_basis_per_share["cost"].divide(cost_basis_per_share["qty"])
-    cost_basis_per_share["current_price"] = cost_basis_per_share["ticker_sym"].apply(lambda ticker: stock_info.get_data(
-        ticker, end_date=datetime.utcnow().replace(hour=0, minute=0)).close[-1])
+    cost_basis_per_share["current_price"] = (cost_basis_per_share["ticker_sym"].apply(lambda ticker: TickerUtils.get_stock_spot_price(ticker)))
     cost_basis_per_share["pl_per_share"] = cost_basis_per_share["current_price"].subtract(cost_basis_per_share["cost_per_share"])
     cost_basis_per_share["current_value"] = cost_basis_per_share["current_price"].multiply(cost_basis_per_share["qty"])
     cost_basis_per_share["current_pl"] = cost_basis_per_share["current_value"].subtract(cost_basis_per_share["cost"])
-    cost_basis_per_share["roi"] = cost_basis_per_share["current_value"].divide(cost_basis_per_share["cost"]).apply(lambda x: x-1)
+    cost_basis_per_share["roi"] = (cost_basis_per_share["current_value"]
+                                   .divide(cost_basis_per_share["cost"])
+                                   .subtract(1))
     cost_basis_per_share = cost_basis_per_share[["ticker_sym",
                                                  "qty",
                                                  "cost",
@@ -31,22 +24,8 @@ def get_cost_basis_per_share():
                                                  "roi",
                                                  "cost_per_share",
                                                  "current_price",
-                                                 "pl_per_share",
-                                                 "first_purchase",
-                                                 "last_purchase"]]
+                                                 "pl_per_share"]]
     return cost_basis_per_share
-
-
-def get_current_prices(tickers: list[str]):
-    current_prices: dict[str, float] = {}
-    eod_datetime = datetime.utcnow().replace(hour=0, minute=0)  # -timedelta(days=1)
-    for ticker in tickers:
-        if ticker == "BTC":
-            price = get_btc_spot_price()
-        else:
-            price = stock_info.get_data(ticker, end_date=eod_datetime).close[-1]
-        current_prices[ticker.lower()+"_qty"] = price
-    return current_prices
 
 
 def get_overview_df():
@@ -71,19 +50,21 @@ def get_comparison_rois_df(comparison_tickers: list[str]):
     all_purchases = [alt_purchases, etf_purchases, btc_purchases]
 
     total_cost = cost_basis_per_share["cost"].sum()
-    current_prices = get_current_prices(comparison_tickers)
+    current_prices = TickerUtils.get_current_prices(comparison_tickers, is_crypto=False)
+    current_prices.update(TickerUtils.get_current_prices(["BTC"], is_crypto=True))
     # print(json.dumps(current_prices, indent=4))
 
     rois = {}
-    for col, price in current_prices.items():
+    for ticker in comparison_tickers:
+        col = TickerUtils.add_suffix(ticker, "qty")
         value = None
         for df in all_purchases:
             if col in df.columns:
-                value = price * df[col].sum()
+                value = current_prices[ticker] * df[col].sum()
                 break
         if value is None:
             raise Exception(f"unknown ticker - {col}")
-        rois[rename_suffix(col, "roi")] = (value/total_cost)-1
+        rois[TickerUtils.add_suffix(ticker, "roi")] = (value/total_cost)-1
     return pd.DataFrame.from_records([rois])
 
 
